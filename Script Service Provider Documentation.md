@@ -332,7 +332,7 @@ Example:
 
 The Credential type presents as a password control that the user fills in. No additional settings are required.
 
-Due to a bug in the current version of Profisee, credential values must be retrieved via `input.credential.value`. This will be fixed in 26.1.
+Due to a bug in the current version of Profisee, credential values must be retrieved via the `value` property on the setting, like `input.password.value`. This will be fixed in 26.1.
 
 Example:
 
@@ -458,7 +458,7 @@ The UI control type used to present the input in the Profisee Portal. This defin
 | [DateTime](#datetime-type)       | DateTime input control. Displays as a date/time picker where users can select a date and time, or date only. |
 | [Expression](#expression-type)     | Expression input control. Provides a dropdown or an expression editor button that opens the expression editor window. |
 | [ParameterSet](#parameterset-type)   | Parameter set input control that groups multiple inputs together. Only works with `Service` scope. |
-<!-- | [Credential](#credential-type)   | Credential input control. Provides a credential input window. Only works with `Service` scope. | -->
+| [Credential](#credential-type)   | Credential input control. Provides a credential input window. Only works with `Service` scope. | -->
 
 ## OutputType 
 
