@@ -332,7 +332,7 @@ Example:
 
 The Credential type presents as a password control that the user fills in. No additional settings are required.
 
-Due to a bug in the current version of Profisee, credential values must be retrieved via the `value` property on the setting, like `input.password.value`. This will be fixed in 26.1.
+Due to a bug in the current version of Profisee, credential values must be retrieved via the `value` property on the setting, like `input.password.configuration.value`. This will be fixed in 26.1.
 
 Example:
 
