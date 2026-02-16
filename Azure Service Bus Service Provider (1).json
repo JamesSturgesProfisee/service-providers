@@ -1,0 +1,170 @@
+{
+  "artifactVersion": "1.5.1.0",
+  "scripts": [
+    {
+      "Configuration": {
+        "scriptContent": "import { fetch, getOAuthToken } from \"Profisee\";\r\n\r\nconst TRANSACTION_TYPE_MAP = {\r\n  1: \"create\",\r\n  2: \"update\",\r\n  3: \"delete\"\r\n};\r\n\r\nfunction normalizePath(path) {\r\n  if (!path) return \"\";\r\n  return path.startsWith(\"/\") ? path.slice(1) : path;\r\n}\r\n\r\nfunction buildServiceBusUrl(serviceBusNamespace, entityPath) {\r\n  const ns = String(serviceBusNamespace || \"\").trim();\r\n  const ep = normalizePath(String(entityPath || \"\").trim());\r\n  return `https://${ns}.servicebus.windows.net/${ep}/messages`;\r\n}\r\n\r\nfunction newGuid() {\r\n  return \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, (c) => {\r\n    const r = (Math.random() * 16) | 0;\r\n    const v = c === \"x\" ? r : (r & 0x3) | 0x8;\r\n    return v.toString(16);\r\n  });\r\n}\r\n\r\nexport function execute(input) {\r\n  const records = input.records;\r\n\r\n  if (!records || records.length === 0) {\r\n    return { isSuccess: true, records: [] };\r\n  }\r\n\r\n  // Service-scope inputs\r\n  const serviceBusNamespace = input.serviceBusNamespace;\r\n  const entityPath = input.entityPath;\r\n  const callbackURL = input.callbackURL;\r\n  const applicationInstanceId = input.applicationInstanceId;\r\n  const applicationInstanceSignature = input.applicationInstanceSignature;\r\n\r\n  // NOTE: The below modification to the call to getOAuthToken is to handle a bug in the script engine where the scope is not passed in correctly\r\n  // This is fixed starting in Profisee Version 26.1. Any modifications after this date should revert the below line to the following:\r\n  // --------- \r\n  // BEFORE 26.1\r\n  // --------- \r\n  //  const oAuthResponse = getOAuthToken({\r\n  //  ...input.authSettings,\r\n  //  scope: \"https://servicebus.azure.net/.default\"\r\n  //})\r\n  // --------- \r\n  // AFTER 26.1:\r\n  // --------- \r\n  //  const oAuthResponse = getOAuthToken(input.authSettings);\r\n  // --------- \r\n  const oAuthResponse = getOAuthToken({\r\n    ...input.authSettings,\r\n    scope: \"https://servicebus.azure.net/.default\"\r\n  })\r\n\r\n  if (!oAuthResponse.ok) {\r\n    return {\r\n      isSuccess: false,\r\n      error: oAuthResponse.error || \"Failed to retrieve OAuth token\"\r\n    };\r\n  }\r\n\r\n  const url = buildServiceBusUrl(serviceBusNamespace, entityPath);\r\n\r\n  for (let i = 0; i < records.length; i++) {\r\n    const r = records[i] || {};\r\n\r\n    // Data-scope inputs\r\n    const code = r.code;\r\n    const email = r.email;\r\n    const transactionType = r.transactionType;\r\n    const lastModifiedDateTime = r.lastUpdatedOn;\r\n\r\n    // Generated properties\r\n    const messageId = newGuid();\r\n    const correlationId = newGuid();\r\n    const sourceSystemDateTime = new Date();\r\n\r\n    const headers = {\r\n      \"Authorization\": `Bearer ${oAuthResponse.token}`,\r\n      \"Content-Type\": \"application/json\",\r\n      \"Accept\": \"application/json\",\r\n      \"messageId\": messageId,\r\n      \"correlationId\": correlationId,\r\n      \"lastModifiedDateTime\": lastModifiedDateTime,\r\n      \"sourceSystemDateTime\": sourceSystemDateTime,\r\n      \"callbackURL\": callbackURL,\r\n      \"applicationInstanceId\": applicationInstanceId,\r\n      \"applicationInstanceSignature\": applicationInstanceSignature\r\n    };\r\n\r\n    const body = {\r\n      user: {\r\n        id: code,\r\n        email: email,\r\n        action: TRANSACTION_TYPE_MAP[Number(transactionType)] ?? \"unsupported\"\r\n      }\r\n    };\r\n\r\n    const res = fetch(url, {\r\n      method: \"POST\",\r\n      headers: headers,\r\n      body: JSON.stringify(body)\r\n    });\r\n\r\n    if (res.exceptionType || !res.ok) {\r\n      return { \r\n        isSuccess: false,\r\n        error: res.error || \"Request failed\"\r\n      }\r\n    }\r\n  }\r\n\r\n  return {\r\n    isSuccess: true//,\r\n  };\r\n}"
+      },
+      "Id": "3c0d414a-d665-4c46-a257-1f894c404aba",
+      "Code": "3c0d414a-d665-4c46-a257-1f894c404aba",
+      "Name": "Post to Topic/Queue"
+    }
+  ],
+  "serviceProviderRecord": {
+    "Configuration": {
+      "workerQueueOptions": {
+        "workerCount": 0,
+        "priorityQueueThreshold": {
+          "maxJobCount": 0,
+          "maxRecordCount": 1000
+        }
+      },
+      "authSettings": {
+        "Type": "OAuth2",
+        "OAuthUrl": "https://login.microsoftonline.com/{AzureTenantID}/oauth2/v2.0/token/",
+        "Scope": "https://servicebus.azure.net/.default"
+      },
+      "services": {
+        "PostToTopicQueue": {
+          "name": "Post to Topic/Queue",
+          "description": "",
+          "scriptId": "3c0d414a-d665-4c46-a257-1f894c404aba",
+          "maximumRecordsPerRequest": 1000,
+          "inputs": {
+            "ServiceBus": {
+              "scope": "Service",
+              "friendlyName": "Azure Service Bus",
+              "presenterConfiguration": {
+                "type": "ParameterSet",
+                "settings": {
+                  "Parameters": {
+                    "Service Bus Namespace": "serviceBusNamespace",
+                    "Topic/Queue": "entityPath",
+                    "Callback URL": "callbackURL",
+                    "Application Instance ID": "applicationInstanceId",
+                    "Application Instance Signature": "applicationInstanceSignature"
+                  }
+                }
+              }
+            },
+            "serviceBusNamespace": {
+              "type": "String",
+              "scope": "Service",
+              "friendlyName": "Service Bus Namespace",
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "entityPath": {
+              "type": "String",
+              "scope": "Service",
+              "friendlyName": "Topic/Queue",
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "callbackURL": {
+              "type": "String",
+              "scope": "Service",
+              "friendlyName": "Callback URL",
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false,
+              "defaultValue": {
+                "value": "https://entity.domain/path/resource"
+              }
+            },
+            "applicationInstanceId": {
+              "type": "String",
+              "scope": "Service",
+              "friendlyName": "Application Instance ID",
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false,
+              "defaultValue": {
+                "value": "de-corp-id-candidate-api-01"
+              }
+            },
+            "applicationInstanceSignature": {
+              "type": "String",
+              "scope": "Service",
+              "friendlyName": "Application Instance Signature",
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "code": {
+              "type": "String",
+              "scope": "Data",
+              "friendlyName": "Code",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "email": {
+              "type": "String",
+              "scope": "Data",
+              "friendlyName": "Email",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "lastUpdatedOn": {
+              "type": "Date",
+              "scope": "Data",
+              "friendlyName": "Last Updated On",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "transactionType": {
+              "type": "Integer",
+              "scope": "Data",
+              "friendlyName": "Transaction Type",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            }
+          },
+          "outputs": {
+            "Code": {
+              "name": "Code",
+              "type": "String"
+            }
+          }
+        }
+      }
+    },
+    "Id": "65c11c11-0841-413b-a27a-a283c38e55c8",
+    "Code": "65c11c11-0841-413b-a27a-a283c38e55c8",
+    "Name": "Azure Service Bus Service Provider",
+    "Type": "Script"
+  }
+}

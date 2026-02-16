@@ -1,0 +1,179 @@
+{
+  "artifactVersion": "1.5.1.0",
+  "scripts": [
+    {
+      "Id": "8d3b36bd-2302-4936-907f-0bc5ba442b47",
+      "Code": "8d3b36bd-2302-4936-907f-0bc5ba442b47",
+      "Name": "VerifyAddress",
+      "Configuration": {
+        "scriptContent": "import { fetch } from \"Profisee\";\n\nfunction buildUrl(address, apiKey) {\n  const baseUrl = \"https://maps.googleapis.com/maps/api/geocode/json\";\n  const params = [\n    `address=${encodeURIComponent(address)}`,\n    `key=${encodeURIComponent(apiKey)}`\n  ];\n  return `${baseUrl}?${params.join(\"&\")}`;\n}\n\nfunction getComponent(components, type) {\n  if (!components || !Array.isArray(components)) return null;\n  for (let i = 0; i < components.length; i++) {\n    const c = components[i];\n    if (c && Array.isArray(c.types) && c.types.indexOf(type) >= 0) return c;\n  }\n  return null;\n}\n\nfunction getLong(components, type) {\n  const c = getComponent(components, type);\n  return c && c.long_name ? String(c.long_name) : \"\";\n}\n\nfunction getShort(components, type) {\n  const c = getComponent(components, type);\n  return c && c.short_name ? String(c.short_name) : \"\";\n}\n\nexport function execute(input) {\n  const records = input && input.records ? input.records : [];\n  const apiKey = input.ApiKey.configuration.value;\n  const block = input.Block;\n\n  if (!apiKey) {\n    return {\n      isSuccess: false,\n      shouldRetry: false,\n      error: \"ApiKey is required\",\n      records: []\n    };\n  }\n\n  if (!records || records.length === 0) {\n    return {\n      isSuccess: true,\n      shouldRetry: false,\n      records: []\n    };\n  }\n\n  const outputRecords = [];\n\n  for (let i = 0; i < records.length; i++) {\n    const record = records[i] || {};\n    const address = record.Address;\n    const code = record.Code;\n\n    if (!address) {\n      outputRecords.push({\n        Code: code,\n        Status: \"FAILED\",\n        Error: \"Address is required\"\n      });\n      continue;\n    }\n\n    const url = buildUrl(address, apiKey);\n    const response = fetch(url, { method: \"GET\" });\n\n    if (response.exceptionType) {\n      outputRecords.push({\n        Code: code,\n        Status: \"FAILED\",\n        Error: response.error || \"Network error\"\n      });\n      continue;\n    }\n\n    if (!response.ok) {\n      outputRecords.push({\n        Code: code,\n        Status: \"FAILED\",\n        Error: `HTTP ${response.status}: ${response.body}`\n      });\n      continue;\n    }\n\n    let data;\n    try {\n      data = JSON.parse(response.body);\n    } catch {\n      outputRecords.push({\n        Code: code,\n        Status: \"FAILED\",\n        Error: \"Failed to parse JSON response\"\n      });\n      continue;\n    }\n\n    if (!data.results || data.results.length === 0) {\n      outputRecords.push({\n        Code: code,\n        Status: data.status || \"NO_RESULTS\",\n        Error: \"No geocode results returned\"\n      });\n      continue;\n    }\n\n    const result = data.results[0] || {};\n    const components = result.address_components || [];\n    const location = result.geometry?.location || {};\n\n    outputRecords.push({\n      Code: code,\n      FormattedAddress: result.formatted_address || \"\",\n      StreetNumber: getLong(components, \"street_number\"),\n      RouteLong: getLong(components, \"route\"),\n      RouteShort: getShort(components, \"route\"),\n      Locality: getLong(components, \"locality\"),\n      AdminAreaLevel2: getLong(components, \"administrative_area_level_2\"),\n      AdminAreaLevel1Long: getLong(components, \"administrative_area_level_1\"),\n      AdminAreaLevel1Short: getShort(components, \"administrative_area_level_1\"),\n      CountryLong: getLong(components, \"country\"),\n      CountryShort: getShort(components, \"country\"),\n      PostalCode: getLong(components, \"postal_code\"),\n      PostalCodeSuffix: getLong(components, \"postal_code_suffix\"),\n      Subpremise: getLong(components, \"subpremise\"),\n      Latitude: location.lat ?? null,\n      Longitude: location.lng ?? null,\n      PlaceId: result.place_id || \"\",\n      LocationType: result.geometry?.location_type || \"\",\n      Status: data.status || \"OK\",\n      Error: \"\"\n    });\n  }\n\n  return {\n    isSuccess: true,\n    shouldRetry: false,\n    records: outputRecords\n  };\n}\n"
+      }
+    }
+  ],
+  "serviceProviderRecord": {
+    "Id": "39b08cef-fae5-449f-9ca3-672b40f5b5cc",
+    "Code": "39b08cef-fae5-449f-9ca3-672b40f5b5cc",
+    "Name": "Google Maps AV Service Provider",
+    "Type": "Script",
+    "Configuration": {
+      "$type": "Profisee.Platform.ConnEx.Contracts.Administration.ScriptServiceProviderConfiguration, Profisee.Platform.ConnEx",
+      "workerQueueOptions": {
+        "workerCount": 1,
+        "priorityQueueThreshold": {
+          "maxJobCount": 1,
+          "maxRecordCount": 1000
+        }
+      },
+      "services": {
+        "VerifyAddress": {
+          "name": "Verify Address",
+          "description": "",
+          "scriptId": "8d3b36bd-2302-4936-907f-0bc5ba442b47",
+          "maximumRecordsPerRequest": 100,
+          "inputs": {
+            "Configuration": {
+              "scope": "Service",
+              "friendlyName": "Configuration",
+              "isRequired": false,
+              "isReadOnly": false,
+              "presenterConfiguration": {
+                "type": "ParameterSet",
+                "settings": {
+                  "Parameters": {
+                    "API Key": "ApiKey",
+                    "Block": "Block"
+                  }
+                }
+              }
+            },
+            "ApiKey": {
+              "scope": "Service",
+              "friendlyName": "API Key",
+              "isRequired": true,
+              "isReadOnly": false,
+              "presenterConfiguration": {
+                "type": "Credential",
+                "settings": {}
+              }
+            },
+            "Code": {
+              "scope": "Data",
+              "type": "String",
+              "friendlyName": "Code",
+              "isRequired": false,
+              "isReadOnly": false,
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              }
+            },
+            "Address": {
+              "scope": "Data",
+              "type": "String",
+              "friendlyName": "Address",
+              "isRequired": false,
+              "isReadOnly": false,
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              }
+            },
+            "Block": {
+              "scope": "Service",
+              "type": "String",
+              "friendlyName": "Block",
+              "isRequired": false,
+              "isReadOnly": false,
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              }
+            }
+          },
+          "outputs": {
+            "Code": {
+              "name": "Code",
+              "type": "String"
+            },
+            "AdminAreaLevel1Long": {
+              "name": "Admin Area Level1 Long",
+              "type": "String"
+            },
+            "AdminAreaLevel1Short": {
+              "name": "Admin Area Level1 Short",
+              "type": "String"
+            },
+            "AdminAreaLevel2": {
+              "name": "Admin Area Level2",
+              "type": "String"
+            },
+            "CountryLong": {
+              "name": "Country Long",
+              "type": "String"
+            },
+            "CountryShort": {
+              "name": "Country Short",
+              "type": "String"
+            },
+            "Error": {
+              "name": "Error",
+              "type": "String"
+            },
+            "FormattedAddress": {
+              "name": "Formatted Address",
+              "type": "String"
+            },
+            "Latitude": {
+              "name": "Latitude",
+              "type": "String"
+            },
+            "Locality": {
+              "name": "Locality",
+              "type": "String"
+            },
+            "LocationType": {
+              "name": "Location Type",
+              "type": "String"
+            },
+            "Longitude": {
+              "name": "Longitude",
+              "type": "String"
+            },
+            "PlaceId": {
+              "name": "Place Id",
+              "type": "String"
+            },
+            "PostalCode": {
+              "name": "Postal Code",
+              "type": "String"
+            },
+            "PostalCodeSuffix": {
+              "name": "Postal Code Suffix",
+              "type": "String"
+            },
+            "RouteLong": {
+              "name": "Route Long",
+              "type": "String"
+            },
+            "RouteShort": {
+              "name": "Route Short",
+              "type": "String"
+            },
+            "Status": {
+              "name": "Status",
+              "type": "String"
+            },
+            "StreetNumber": {
+              "name": "Street Number",
+              "type": "String"
+            },
+            "Subpremise": {
+              "name": "Subpremise",
+              "type": "String"
+            }
+          }
+        }
+      }
+    }
+  }
+}

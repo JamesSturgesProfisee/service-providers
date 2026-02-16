@@ -1,0 +1,205 @@
+{
+  "artifactVersion": "1.5.1.0",
+  "scripts": [
+    {
+      "Configuration": {
+        "scriptContent": "import { fetch, getOAuthToken } from \"Profisee\";\r\n\r\nconst RETRY_HTTP_CODES = [408, 429, 500, 502, 503, 504];\r\n\r\nfunction isRetryableStatus(status) {\r\n  return RETRY_HTTP_CODES.indexOf(status) >= 0;\r\n}\r\n\r\nfunction uuidv4() {\r\n  let dt = new Date().getTime();\r\n  return \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function (c) {\r\n    const r = (dt + Math.random() * 16) % 16 | 0;\r\n    dt = Math.floor(dt / 16);\r\n    if (c === \"x\") return r.toString(16);\r\n    return ((r & 0x3) | 0x8).toString(16);\r\n  });\r\n}\r\n\r\nfunction recordFail(code) {\r\n  return { code: code, status: \"Failed\" };\r\n}\r\n\r\nfunction recordOk(code, apiObj) {\r\n  const o = apiObj || {};\r\n  return {\r\n    code: code,\r\n    status: \"Success\",\r\n    confidence: o.confidence,\r\n    buildingName: o.buildingName,\r\n    flatOrUnitType: o.flatOrUnitType,\r\n    flatOrUnitNumber: o.flatOrUnitNumber,\r\n    subBuildingNumber: o.subBuildingNumber,\r\n    buildingLevel: o.buildingLevel,\r\n    buildingNumber: o.buildingNumber,\r\n    allotmentNumber: o.allotmentNumber,\r\n    street: o.street,\r\n    streetType: o.streetType,\r\n    locality: o.locality,\r\n    borderingLocality: o.borderingLocality,\r\n    stateCode: o.stateCode,\r\n    stateName: o.stateName,\r\n    postcode: o.postcode,\r\n    countryName: o.countryName,\r\n    twoCharacterCountryCode: o.twoCharacterCountryCode,\r\n    threeCharacterCountryCode: o.threeCharacterCountryCode,\r\n    deliveryPointIdentifier: o.deliveryPointIdentifier,\r\n    secondaryStreetFullName: o.secondaryStreetFullName,\r\n    secondaryStreetType: o.secondaryStreetType\r\n  };\r\n}\r\n\r\nexport function execute(input) {\r\n  const records = input.records || [];\r\n\r\n  // NOTE: The below modification to the call to getOAuthToken is to handle a bug in the script engine where the scope is not passed in correctly\r\n  // This is fixed starting in Profisee Version 26.1. Any modifications after this date should revert the below line to the following:\r\n  // --------- \r\n  // BEFORE 26.1\r\n  // --------- \r\n  //  const oAuthResponse = getOAuthToken({\r\n  //  ...input.authSettings,\r\n  //  scope: \"{OAuth2Scope}\"\r\n  //})\r\n  // --------- \r\n  // AFTER 26.1:\r\n  // --------- \r\n  //  const oAuthResponse = getOAuthToken(input.authSettings);\r\n  // --------- \r\n  const oAuthResponse = getOAuthToken({\r\n    ...input.authSettings,\r\n    scope: \"{OAuth2Scope}\"\r\n  })\r\n  if (!oAuthResponse.ok) {\r\n    return {\r\n      isSuccess: false,\r\n      shouldRetry: false,\r\n      error: oAuthResponse.error\r\n    };\r\n  }\r\n\r\n  const url = input.url;\r\n  const subscriptionKey = input.subscriptionKey;\r\n\r\n  const out = [];\r\n\r\n  for (let i = 0; i < records.length; i++) {\r\n    const r = records[i];\r\n    const code = r.code;\r\n\r\n    const correlationId = uuidv4();\r\n    const requestId = uuidv4();\r\n    const sessionId = uuidv4();\r\n\r\n    const res = fetch(url, {\r\n      method: \"POST\",\r\n      headers: {\r\n        \"Authorization\": `Bearer ${oAuthResponse.token}`,\r\n        \"Accept\": \"application/json\",\r\n        \"Content-Type\": \"application/json\",\r\n        \"Cache-Control\": \"no-cache\",\r\n        \"x-applicationId\": \"MDM\",\r\n        \"x-correlationId\": correlationId,\r\n        \"x-requestId\": requestId,\r\n        \"x-sessionId\": sessionId,\r\n        \"Ocp-Apim-Subscription-Key\": subscriptionKey\r\n      },\r\n      body: JSON.stringify({\r\n        address: r.address,\r\n        countryCode: r.countryCode\r\n      })\r\n    });\r\n\r\n    // Network exception\r\n    if (res.exceptionType) {\r\n      // Treat as batch-level retryable failure\r\n      return {\r\n        isSuccess: false,\r\n        shouldRetry: true,\r\n        error: res.error,\r\n        records: out.concat([recordFail(code)])\r\n      };\r\n    }\r\n\r\n    if (!res.ok) {\r\n      if (isRetryableStatus(res.status)) {\r\n        // Batch-level retryable failure\r\n        return {\r\n          isSuccess: false,\r\n          shouldRetry: true,\r\n          error: `HTTP ${res.status}`,\r\n          records: out.concat([recordFail(code)])\r\n        };\r\n      }\r\n\r\n      // Record-level failure only\r\n      out.push(recordFail(code));\r\n      continue;\r\n    }\r\n\r\n    const obj = res.body ? JSON.parse(res.body) : {};\r\n    out.push(recordOk(code, obj));\r\n  }\r\n\r\n  return {\r\n    isSuccess: true,\r\n    shouldRetry: false,\r\n    error: \"\",\r\n    records: out\r\n  };\r\n}\r\n"
+      },
+      "Id": "f120c69b-1fc2-4d4b-a72a-8a0b02e8c302",
+      "Code": "f120c69b-1fc2-4d4b-a72a-8a0b02e8c302",
+      "Name": "VerifyAddress"
+    }
+  ],
+  "serviceProviderRecord": {
+    "Configuration": {
+      "workerQueueOptions": {
+        "workerCount": 0,
+        "priorityQueueThreshold": {
+          "maxJobCount": 0,
+          "maxRecordCount": 1000
+        }
+      },
+      "authSettings": {
+        "Type": "OAuth2",
+        "OAuthUrl": "https://login.microsoftonline.com/{AzureTenantID}/oauth2/v2.0/token/",
+        "Scope": "{OAuth2Scope}"
+      },
+      "services": {
+        "VerifyAddress": {
+          "name": "Verify Address",
+          "description": "",
+          "inputs": {
+            "ConnectionDetails": {
+              "scope": "Service",
+              "friendlyName": "Connection Details",
+              "presenterConfiguration": {
+                "type": "ParameterSet",
+                "settings": {
+                  "Parameters": {
+                    "URL": "url",
+                    "Subscription Key": "subscriptionKey"
+                  }
+                }
+              }
+            },
+            "url": {
+              "type": "String",
+              "scope": "Service",
+              "friendlyName": "URL",
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "subscriptionKey": {
+              "type": "String",
+              "scope": "Service",
+              "friendlyName": "Subscription Key",
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "code": {
+              "type": "String",
+              "scope": "Data",
+              "friendlyName": "Code",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "address": {
+              "type": "String",
+              "scope": "Data",
+              "friendlyName": "Address",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "countryCode": {
+              "type": "String",
+              "scope": "Data",
+              "friendlyName": "Country Code",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            }
+          },
+          "outputs": {
+            "code": {
+              "name": "Code",
+              "type": "String"
+            },
+            "confidence": {
+              "name": "Confidence",
+              "type": "String"
+            },
+            "buildingName": {
+              "name": "Building Name",
+              "type": "String"
+            },
+            "flatOrUnitType": {
+              "name": "Flat/Unit Type",
+              "type": "String"
+            },
+            "flatOrUnitNumber": {
+              "name": "Flat/Unit Number",
+              "type": "String"
+            },
+            "subBuildingNumber": {
+              "name": "subBuildingNumber",
+              "type": "String"
+            },
+            "buildingLevel": {
+              "name": "Building Level",
+              "type": "String"
+            },
+            "buildingNumber": {
+              "name": "Building Number",
+              "type": "String"
+            },
+            "allotmentNumber": {
+              "name": "Allotment Number",
+              "type": "String"
+            },
+            "street": {
+              "name": "Street",
+              "type": "String"
+            },
+            "streetType": {
+              "name": "Street Type",
+              "type": "String"
+            },
+            "locality": {
+              "name": "Locality",
+              "type": "String"
+            },
+            "borderingLocality": {
+              "name": "Bordering Locality",
+              "type": "String"
+            },
+            "stateCode": {
+              "name": "State Code",
+              "type": "String"
+            },
+            "stateName": {
+              "name": "State Name",
+              "type": "String"
+            },
+            "postcode": {
+              "name": "Post Code",
+              "type": "String"
+            },
+            "countryName": {
+              "name": "Country Name",
+              "type": "String"
+            },
+            "twoCharacterCountryCode": {
+              "name": "Two Character Country Code",
+              "type": "String"
+            },
+            "threeCharacterCountryCode": {
+              "name": "Three Character Country Code",
+              "type": "String"
+            },
+            "deliveryPointIdentifier": {
+              "name": "Delivery Point Identifier",
+              "type": "String"
+            },
+            "secondaryStreetFullName": {
+              "name": "Secondary Street Full Name",
+              "type": "String"
+            },
+            "secondaryStreetType": {
+              "name": "Secondary Street Type",
+              "type": "String"
+            },
+            "status": {
+              "name": "Status",
+              "type": "String"
+            }
+          },
+          "scriptId": "f120c69b-1fc2-4d4b-a72a-8a0b02e8c302",
+          "maximumRecordsPerRequest": 1000
+        }
+      }
+    },
+    "Id": "752f51cb-d919-4164-b4a3-2a767ee5fa20",
+    "Code": "752f51cb-d919-4164-b4a3-2a767ee5fa20",
+    "Name": "APIM Wrapper Service Provider",
+    "Type": "Script"
+  }
+}

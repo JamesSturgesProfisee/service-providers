@@ -1,0 +1,197 @@
+{
+  "artifactVersion": "1.5.1.0",
+  "scripts": [
+    {
+      "Configuration": {
+        "scriptContent": "import { fetch } from \"Profisee\";\n\nconst BASE_URL = \"https://api.experianaperture.io\";\nconst PATH = \"/address/validate/v1\";\nconst RETRY_HTTP_CODES = [408, 429, 500, 502, 503, 504];\n\nfunction parseJsonSafe(body) {\n  if (!body) return null;\n  try { return JSON.parse(body); } catch (e) { return { raw: body }; }\n}\n\nfunction buildHeaders(authToken, referenceId, addComponents, addMetadata, addEnrichment, addExtraMatchInfo) {\n  const headers = {\n    \"Auth-Token\": authToken,\n    \"Timeout-Seconds\": \"15\",\n    \"Reference-Id\": referenceId,\n    \"Accept\": \"application/json\",\n    \"Content-Type\": \"application/json\"\n  };\n\n  if (addComponents === true) headers[\"Add-Components\"] = \"true\";\n  if (addMetadata === true) headers[\"Add-Metadata\"] = \"true\";\n  if (addEnrichment === true) headers[\"Add-Enrichment\"] = \"true\";\n  if (addExtraMatchInfo === true) headers[\"Add-ExtraMatchInfo\"] = \"true\";\n\n  return headers;\n}\n\nfunction buildRequestBody(address) {\n  const line = String(address || \"\").trim();\n  return {\n    country_iso: \"AUS\",\n    datasets: [\"au-address\"],\n    components: {\n      unspecified: [line]\n    },\n    options: [\n      { name: \"prompt_set\", value: \"default\" },\n      { name: \"flatten\", value: \"true\" },\n      { name: \"intensity\", value: \"exact\" }\n    ],\n    layouts: [\"default\"],\n    layout_format: \"default\"\n  };\n}\n\nexport function execute(input) {\n  const record = input.records[0]\n  const recordCode = record.code;\n  const recordAddress = record.address;\n\n  const buildOutputRecord = (partial) => ({\n    Code: recordCode || \"\",\n    InputAddress: recordAddress || \"\",\n    GlobalAddressKey: \"\",\n    Confidence: \"\",\n    MatchType: \"\",\n    MatchConfidence: \"\",\n    AddressLine1: \"\",\n    AddressLine2: \"\",\n    AddressLine3: \"\",\n    Locality: \"\",\n    Region: \"\",\n    PostalCode: \"\",\n    Country: \"\",\n    Status: \"\",\n    Error: \"\",\n    RawResponse: \"\",\n    ...partial\n  });\n\n  const fail = (message, shouldRetry, rawResponse, status) => ({\n    isSuccess: false,\n    shouldRetry: !!shouldRetry,\n    error: `${message}`,\n    records: [buildOutputRecord({\n      Status: status || \"Failed\",\n      Error: message,\n      RawResponse: rawResponse || \"\"\n    })]\n  });\n\n  try {\n\n    if (!recordAddress) {\n      return fail(\"Address is required\", false, \"\", \"Failed\");\n    }\n\n    const authToken = input.authToken\n\n    const headers = buildHeaders(authToken, recordCode, input.addComponents, input.addMetadata, input.addEnrichment, input.addExtraMatchInfo)\n    const body = buildRequestBody(recordAddress);\n\n    const response = fetch(`${BASE_URL}${PATH}`, {\n      method: \"POST\",\n      headers,\n      body: JSON.stringify(body)\n    });\n\n    if (response.exceptionType) {\n      const msg = response.error || \"Network error calling Experian Address Validation\";\n      return fail(msg, response.shouldRetry, response.body, \"Exception\");\n    }\n\n    if (!response.ok) {\n      const shouldRetry = RETRY_HTTP_CODES.includes(response.status);\n      const msg = `HTTP ${response.status} calling Experian Address Validation`;\n      return fail(msg, shouldRetry, response.body, `HTTP ${response.status}`);\n    }\n\n    const data = parseJsonSafe(response.body);\n    const result = data && data.result ? data.result : null;\n    const addr = result && result.address ? result.address : {};\n\n    const output = buildOutputRecord({\n      GlobalAddressKey: result && result.global_address_key ? String(result.global_address_key) : \"\",\n      Confidence: result && result.confidence ? String(result.confidence) : \"\",\n      MatchType: result && result.match_type ? String(result.match_type) : \"\",\n      MatchConfidence: result && result.match_confidence ? String(result.match_confidence) : \"\",\n      AddressLine1: addr && addr.address_line_1 ? String(addr.address_line_1) : \"\",\n      AddressLine2: addr && addr.address_line_2 ? String(addr.address_line_2) : \"\",\n      AddressLine3: addr && addr.address_line_3 ? String(addr.address_line_3) : \"\",\n      Locality: addr && addr.locality ? String(addr.locality) : \"\",\n      Region: addr && addr.region ? String(addr.region) : \"\",\n      PostalCode: addr && addr.postal_code ? String(addr.postal_code) : \"\",\n      Country: addr && addr.country ? String(addr.country) : \"\",\n      Status: \"Success\",\n      RawResponse: response.body || \"\"\n    });\n\n    return {\n      isSuccess: true,\n      shouldRetry: false,\n      error: \"\",\n      records: [output]\n    };\n  } catch (e) {\n    const msg = e && e.message ? e.message : String(e);\n    return fail(msg, false, \"\", \"Failed\");\n  }\n}\n"
+      },
+      "Id": "1755579a-fac3-430d-bc17-ea36b59dce52",
+      "Code": "1755579a-fac3-430d-bc17-ea36b59dce52",
+      "Name": "Validate Address"
+    }
+  ],
+  "serviceProviderRecord": {
+    "Configuration": {
+      "workerQueueOptions": {
+        "workerCount": 2,
+        "priorityQueueThreshold": {
+          "maxJobCount": 1,
+          "maxRecordCount": 5000
+        }
+      },
+      "services": {
+        "ValidateAddress": {
+          "name": "Experian - Address Validate v1",
+          "description": "Validates a single-line address using Experian Aperture Address Validate v1 API (one record per request).",
+          "inputs": {
+            "Headers": {
+              "scope": "Service",
+              "friendlyName": "Experian Headers",
+              "presenterConfiguration": {
+                "type": "ParameterSet",
+                "settings": {
+                  "Parameters": {
+                    "Auth Token": "authToken",
+                    "Add Components": "addComponents",
+                    "Add Metadata": "addMetadata",
+                    "Add Enrichment": "addEnrichment",
+                    "Add Extra Match Info": "addExtraMatchInfo"
+                  }
+                }
+              }
+            },
+            "authToken": {
+              "type": "String",
+              "scope": "Service",
+              "friendlyName": "Auth Token",
+              "presenterConfiguration": {
+                "type": "String",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "addComponents": {
+              "type": "Boolean",
+              "scope": "Service",
+              "friendlyName": "Add-Components header (optional)",
+              "presenterConfiguration": {
+                "type": "Boolean",
+                "settings": {}
+              },
+              "isRequired": false,
+              "isReadOnly": false
+            },
+            "addMetadata": {
+              "type": "Boolean",
+              "scope": "Service",
+              "friendlyName": "Add-Metadata header (optional)",
+              "presenterConfiguration": {
+                "type": "Boolean",
+                "settings": {}
+              },
+              "isRequired": false,
+              "isReadOnly": false
+            },
+            "addEnrichment": {
+              "type": "Boolean",
+              "scope": "Service",
+              "friendlyName": "Add-Enrichment header (optional)",
+              "presenterConfiguration": {
+                "type": "Boolean",
+                "settings": {}
+              },
+              "isRequired": false,
+              "isReadOnly": false
+            },
+            "addExtraMatchInfo": {
+              "type": "Boolean",
+              "scope": "Service",
+              "friendlyName": "Add-ExtraMatchInfo header (optional)",
+              "presenterConfiguration": {
+                "type": "Boolean",
+                "settings": {}
+              },
+              "isRequired": false,
+              "isReadOnly": false
+            },
+            "code": {
+              "type": "String",
+              "scope": "Data",
+              "friendlyName": "Code",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            },
+            "address": {
+              "type": "String",
+              "scope": "Data",
+              "friendlyName": "Address",
+              "presenterConfiguration": {
+                "type": "Expression",
+                "settings": {}
+              },
+              "isRequired": true,
+              "isReadOnly": false
+            }
+          },
+          "outputs": {
+            "Code": {
+              "name": "Code",
+              "type": "String"
+            },
+            "InputAddress": {
+              "name": "Original Input Address",
+              "type": "String"
+            },
+            "GlobalAddressKey": {
+              "name": "Experian Global Address Key",
+              "type": "String"
+            },
+            "Confidence": {
+              "name": "Match Confidence (description)",
+              "type": "String"
+            },
+            "MatchType": {
+              "name": "Match Type",
+              "type": "String"
+            },
+            "MatchConfidence": {
+              "name": "Match Confidence (level)",
+              "type": "String"
+            },
+            "AddressLine1": {
+              "name": "Validated Address Line 1",
+              "type": "String"
+            },
+            "AddressLine2": {
+              "name": "Validated Address Line 2",
+              "type": "String"
+            },
+            "AddressLine3": {
+              "name": "Validated Address Line 3",
+              "type": "String"
+            },
+            "Locality": {
+              "name": "Locality",
+              "type": "String"
+            },
+            "Region": {
+              "name": "Region/State",
+              "type": "String"
+            },
+            "PostalCode": {
+              "name": "Postal Code",
+              "type": "String"
+            },
+            "Country": {
+              "name": "Country",
+              "type": "String"
+            },
+            "Status": {
+              "name": "Status (Success/Failed/HTTP code)",
+              "type": "String"
+            },
+            "Error": {
+              "name": "Error Message",
+              "type": "String"
+            },
+            "RawResponse": {
+              "name": "Raw JSON Response",
+              "type": "String"
+            }
+          },
+          "scriptId": "1755579a-fac3-430d-bc17-ea36b59dce52",
+          "maximumRecordsPerRequest": 1
+        }
+      }
+    },
+    "Id": "2542ead6-27e5-4416-82a3-2de9974c8bdd",
+    "Code": "2542ead6-27e5-4416-82a3-2de9974c8bdd",
+    "Name": "Experian Address Validation Service Provider",
+    "Type": "Script"
+  }
+}
